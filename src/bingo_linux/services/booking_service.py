@@ -321,6 +321,22 @@ class BookingWorkflowService(QObject):
         self._transition(BookingState.IN_PROGRESS)
         return self._session
 
+    def set_fare_amount(self, amount: float) -> None:
+        """Record the fare amount for the active session.
+
+        Data-only update; no state transition. The recorded value is used
+        by :meth:`confirm_payment` when no explicit fare is supplied.
+
+        Args:
+            amount: Fare amount shown to and accepted by the user.
+
+        Raises:
+            BookingSessionError: If no session is active.
+        """
+        if self._session is None:
+            raise BookingSessionError("No active booking session.")
+        self._session["fare_amount"] = float(amount)
+
     # ------------------------------------------------------------------
     # Checkpoints (user-driven)
     # ------------------------------------------------------------------
@@ -477,11 +493,11 @@ class BookingWorkflowService(QObject):
         if self._session is not None:
             self._session["pnr"] = pnr_clean
         result = {"history_id": history_id, "pnr_id": pnr_id, "pnr": pnr_clean}
-        self._session = None
         self.event_emitted.emit(
             "payment_confirmed", f"Payment confirmed. PNR {pnr_clean} persisted."
         )
         self.booking_completed.emit(pnr_clean)
+        self._session = None
         return result
 
     def cancel(self) -> None:

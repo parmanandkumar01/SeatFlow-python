@@ -3,19 +3,28 @@
 from __future__ import annotations
 
 import json
+import os
+import webbrowser
 from typing import Any, Optional
 
 from PySide6.QtCore import QObject, QPoint, Qt, Signal
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QMessageBox,
+    QWidget,
+)
 
 from bingo_linux.database.database import Database
 from bingo_linux.security.vault import VaultService
 from bingo_linux.services import (
+    BookingState,
     BookingWorkflowService,
     CleanerService,
     HistoryService,
     IrctcAccountService,
+    InvalidTransitionError,
     MasterDataService,
     NewsService,
     PaymentService,
@@ -25,6 +34,7 @@ from bingo_linux.services import (
     TicketService,
     TransferService,
 )
+from bingo_linux.services.ticket_render_service import TicketRenderService
 from bingo_linux.services.train_service import check_availability, fetch_train_list
 from bingo_linux.ui import (
     AccountsWindow,
@@ -44,6 +54,9 @@ from bingo_linux.ui import (
     VaultWindow,
     place_toolbar_top,
 )
+from bingo_linux.ui.dialogs.captcha_dialog import CaptchaDialog
+from bingo_linux.ui.dialogs.fare_confirm_dialog import FareConfirmDialog
+from bingo_linux.ui.dialogs.two_factor_dialog import TwoFactorDialog
 from bingo_linux.ui.theme import DARK_THEME_STYLE
 
 
@@ -78,6 +91,9 @@ class Application(QObject):
         self._master_data_service: Optional[MasterDataService] = None
         self._booking_service: Optional[BookingWorkflowService] = None
         self._cleaner_service: Optional[CleanerService] = None
+        self._ticket_render_service: Optional[TicketRenderService] = None
+        self._ers_output_dir: str = os.path.join(os.getcwd(), "ers_records")
+        self._active_pair_key: Optional[str] = None
 
         # UI Window instances
         self._main_window: Optional[MainToolbarWindow] = None
@@ -132,6 +148,7 @@ class Application(QObject):
             ticket_service=self._ticket_service,
             account_service=self._account_service,
         )
+        self._ticket_render_service = TicketRenderService()
 
     def create_main_window(self) -> MainWindow:
         """Create and return the main application window.
@@ -343,6 +360,30 @@ class Application(QObject):
         if self._tokens_window is not None:
             self._tokens_window.check_clicked.connect(self._on_check_tokens)
             self._tokens_window.clear_clicked.connect(self._on_clear_tokens)
+
+        # Booking workflow service signals (user-driven checkpoints).
+        if self._booking_service is not None:
+            self._booking_service.state_changed.connect(
+                self._on_booking_state_changed
+            )
+            self._booking_service.waiting_for_2fa.connect(
+                self._on_booking_waiting_for_2fa
+            )
+            self._booking_service.waiting_for_captcha.connect(
+                self._on_booking_waiting_for_captcha
+            )
+            self._booking_service.waiting_for_fare_confirmation.connect(
+                self._on_booking_waiting_for_fare
+            )
+            self._booking_service.booking_completed.connect(
+                self._on_booking_completed
+            )
+            self._booking_service.booking_failed.connect(
+                self._on_booking_failed
+            )
+            self._booking_service.booking_cancelled.connect(
+                self._on_booking_cancelled
+            )
 
     # ------------------------------------------------------------------
     # Positioning Helpers
@@ -703,10 +744,307 @@ class Application(QObject):
         self._pair_windows.pop(pair_key, None)
 
     def _on_pair_launch_worker(self, ticket_id: str, pair_idx: int, worker_tag: str) -> None:
+        """Handle a worker-button launch from a ticket pair panel.
+
+        Starts the user-assisted booking session, opens the official IRCTC
+        page in the system browser (sanctioned visible browser, no
+        automation), copies passenger/train details to the clipboard for
+        form assistance, and advances the workflow to the manual login /
+        2FA checkpoint.
+        """
         pair_key = f"{ticket_id}_{pair_idx}"
         win = self._pair_windows.get(pair_key)
+        if (
+            win is None
+            or self._booking_service is None
+            or self._ticket_service is None
+        ):
+            return
+
+        self._active_pair_key = pair_key
+
+        try:
+            self._booking_service.start_session(ticket_id)
+        except InvalidTransitionError:
+            # A session is already active; continue with the handoff.
+            pass
+
+        ticket = self._ticket_service.get_ticket(ticket_id)
+
+        # 2. Browser launch handoff — sanctioned visible system browser.
+        self._open_browser(self._irctc_booking_url())
+
+        win.set_status(f"ACTIVE · {worker_tag} · BROWSER OPENED", "#06b6d4")
+        win.set_availability("VERIFYING · LOGIN", is_available=False)
+        win.set_tatkal_countdown(ticket.get("class"))
+
+        # 3. Form assistance — copy passenger/train details to clipboard.
+        self._copy_booking_details_to_clipboard(ticket)
+
+        # 4. Advance to the manual login / 2FA checkpoint.
+        self._booking_service.reach_login_checkpoint()
+
+    def _irctc_booking_url(self) -> str:
+        """Return the official IRCTC booking page URL."""
+        return "https://www.irctc.co.in/ntrain/train"
+
+    def _open_browser(self, url: str) -> None:
+        """Open a URL in the system's default visible browser.
+
+        No automation or headless fetching is performed; the user
+        completes login, CAPTCHA, and payment manually in the browser.
+        """
+        try:
+            webbrowser.open(url, new=1, autoraise=True)
+        except Exception:
+            pass
+
+    def _copy_booking_details_to_clipboard(self, ticket: dict[str, Any]) -> None:
+        """Copy passenger and train details to the clipboard for form entry."""
+        passengers = ""
+        try:
+            pax_list = json.loads(ticket.get("passenger_details", "[]") or "[]")
+            if isinstance(pax_list, list):
+                passengers = "; ".join(
+                    f"{p.get('name', '')} "
+                    f"({p.get('age', '')}, {p.get('gender', '')}, "
+                    f"{p.get('berth', p.get('berth_preference', ''))})"
+                    for p in pax_list
+                    if isinstance(p, dict)
+                )
+        except Exception:
+            passengers = str(ticket.get("passenger_details", ""))
+
+        text = (
+            f"Train {ticket.get('train_number', '')} | "
+            f"{ticket.get('from_station', '')} → {ticket.get('to_station', '')} | "
+            f"{ticket.get('journey_date', '')} | "
+            f"{ticket.get('class', '')} | {ticket.get('quota', '')}\n"
+            f"Passengers: {passengers}\n"
+            "Enter these details manually on the IRCTC booking page."
+        )
+        clipboard = QGuiApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText(text)
+
+    def _active_pair_window(self) -> Optional[TicketPanelWindow]:
+        """Return the pair panel driving the active booking session."""
+        key = self._active_pair_key
+        if key is None:
+            return None
+        return self._pair_windows.get(key)
+
+    def _on_booking_state_changed(self, old: str, new: str) -> None:
+        """Reflect booking state transitions on the active pair panel."""
+        win = self._active_pair_window()
+        if win is None or self._booking_service is None:
+            return
+        try:
+            state = BookingState(new)
+        except ValueError:
+            return
+        win.set_booking_state(state)
+        if state == BookingState.IN_PROGRESS and self._ticket_service is not None:
+            ticket_id = (self._booking_service.session or {}).get("ticket_id")
+            if ticket_id:
+                try:
+                    ticket = self._ticket_service.get_ticket(ticket_id)
+                    win.set_tatkal_countdown(ticket.get("class"))
+                except Exception:
+                    pass
+
+    def _on_booking_waiting_for_2fa(self) -> None:
+        """2FA checkpoint: prompt the user for manual OTP entry."""
+        win = self._active_pair_window()
         if win is not None:
-            win.set_status(f"ACTIVE · {worker_tag} · READY", "#7c3aed")
+            win.set_status("WAITING · 2FA / OTP", "#ea580c")
+        code = self._show_two_factor_dialog(win)
+        if code and self._booking_service is not None:
+            try:
+                self._booking_service.submit_manual_2fa(code)
+            except Exception as exc:
+                self._show_booking_error(win, f"2FA rejected: {exc}")
+
+    def _on_booking_waiting_for_captcha(self) -> None:
+        """CAPTCHA checkpoint: prompt the user to enter the on-screen CAPTCHA."""
+        win = self._active_pair_window()
+        if win is not None:
+            win.set_status("WAITING · CAPTCHA", "#f59e0b")
+        text = self._show_captcha_dialog(win)
+        if text and self._booking_service is not None:
+            try:
+                self._booking_service.submit_manual_captcha(text)
+            except Exception as exc:
+                self._show_booking_error(win, f"CAPTCHA rejected: {exc}")
+
+    def _on_booking_waiting_for_fare(self) -> None:
+        """Fare/payment checkpoint: show payment details and confirm fare."""
+        win = self._active_pair_window()
+        if win is not None:
+            win.set_status("PAYMENT · PENDING", "#7c3aed")
+        self._show_payment_details(win)
+        confirmed = self._show_fare_confirm_dialog(win)
+        if self._booking_service is None:
+            return
+        try:
+            if confirmed:
+                self._booking_service.confirm_fare(True)
+            else:
+                self._booking_service.confirm_fare(False)
+        except Exception as exc:
+            self._show_booking_error(win, f"Fare confirmation failed: {exc}")
+
+    def _on_booking_completed(self, pnr: str) -> None:
+        """Booking completed: update panel, render ERS, and notify the user."""
+        win = self._active_pair_window()
+        if win is not None:
+            win.set_status("BOOKED", "#16a34a")
+            win.set_availability("BOOKED", is_available=False)
+        self._render_and_save_ers(pnr)
+        parent = win or self._main_window
+        if parent is not None:
+            QMessageBox.information(
+                parent,
+                "Booking Complete",
+                f"Booking completed successfully!\nPNR: {pnr}\n"
+                f"ERS slip saved to {self._ers_output_dir}.",
+            )
+
+    def _on_booking_failed(self, reason: str) -> None:
+        """Handle a booking failure."""
+        win = self._active_pair_window()
+        if win is not None:
+            win.set_status("FAILED", "#dc2626")
+        self._show_booking_error(win, reason)
+
+    def _on_booking_cancelled(self) -> None:
+        """Handle a booking cancellation."""
+        win = self._active_pair_window()
+        if win is not None:
+            win.set_status("CANCELLED", "#dc2626")
+
+    def _show_booking_error(self, win: Optional[QWidget], message: str) -> None:
+        parent = win or self._main_window
+        if parent is not None:
+            QMessageBox.warning(parent, "Booking Error", message)
+
+    # ------------------------------------------------------------------
+    # User-driven checkpoint dialogs (overridable for tests)
+    # ------------------------------------------------------------------
+
+    def _show_two_factor_dialog(self, win: Optional[QWidget]) -> Optional[str]:
+        """Show the manual 2FA/OTP dialog; returns the code or None."""
+        dlg = TwoFactorDialog(win)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            return dlg.get_otp_code()
+        return None
+
+    def _show_captcha_dialog(self, win: Optional[QWidget]) -> Optional[str]:
+        """Show the manual CAPTCHA dialog; returns the text or None."""
+        dlg = CaptchaDialog(win)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            return dlg.get_captcha_text()
+        return None
+
+    def _show_payment_details(self, win: Optional[QWidget]) -> None:
+        """Display the selected bank/gateway and UPI / IPAYQR payment instructions."""
+        bank = ""
+        if win is not None:
+            bank = win.bank_combo.currentText() or ""
+        if not bank:
+            bank = "IPPAYUPI · ipay@upi"
+        parent = win or self._main_window
+        if parent is None:
+            return
+        QMessageBox.information(
+            parent,
+            "Payment Handoff",
+            "Complete payment manually in the opened IRCTC browser window.\n\n"
+            f"Selected Gateway/Bank: {bank}\n"
+            "UPI ID: ipay@upi\n"
+            "IPAYQR: scan the QR shown on the payment page, or pay via any UPI app.\n\n"
+            "Once the payment is approved, enter the PNR below to complete the booking.",
+        )
+
+    def _show_fare_confirm_dialog(self, win: Optional[QWidget]) -> bool:
+        """Show the fare confirmation dialog; returns True if accepted."""
+        session = self._booking_service.session if self._booking_service else None
+        dlg = FareConfirmDialog(
+            win,
+            fare_amount=(session or {}).get("fare_amount"),
+            train_number=(session or {}).get("train_number"),
+            journey_date=(session or {}).get("journey_date"),
+        )
+        return dlg.exec() == QDialog.DialogCode.Accepted
+
+    def _render_and_save_ers(self, pnr: str) -> str:
+        """Render the ERS HTML for the completed booking and save it to disk."""
+        if self._ticket_render_service is None or self._booking_service is None:
+            return ""
+        session = self._booking_service.session or {}
+        ticket_id = session.get("ticket_id")
+        ticket = None
+        if ticket_id and self._ticket_service is not None:
+            try:
+                ticket = self._ticket_service.get_ticket(ticket_id)
+            except Exception:
+                ticket = None
+
+        fare = session.get("fare_amount")
+        passengers = []
+        if ticket is not None:
+            try:
+                passengers = json.loads(ticket.get("passenger_details", "[]") or "[]")
+            except Exception:
+                passengers = []
+
+        dto = {
+            "HtmlTitle": "Electronic Reservation Slip",
+            "bookingResponseDTO": {
+                "pnrNumber": pnr,
+                "trainNumber": ticket.get("train_number", "") if ticket else "",
+                "trainName": "",
+                "journeyClass": ticket.get("class", "") if ticket else "",
+                "bookedQuota": ticket.get("quota", "") if ticket else "",
+                "journeyQuota": ticket.get("quota", "") if ticket else "",
+                "distance": "",
+                "bookingDate": "",
+                "fromStnName": ticket.get("from_station", "") if ticket else "",
+                "fromStn": ticket.get("from_station", "") if ticket else "",
+                "boardingStnName": ticket.get("from_station", "") if ticket else "",
+                "boardingStn": ticket.get("from_station", "") if ticket else "",
+                "resvnUptoStnName": ticket.get("to_station", "") if ticket else "",
+                "resvnUptoStn": ticket.get("to_station", "") if ticket else "",
+                "journeyDate": ticket.get("journey_date", "") if ticket else "",
+                "boardingDate": ticket.get("journey_date", "") if ticket else "",
+                "destArrvDate": ticket.get("journey_date", "") if ticket else "",
+                "totalFare": str(fare) if fare is not None else "",
+                "serviceChargeTotal": "",
+            },
+            "FullClassName": f"{ticket.get('class', '')} ({ticket.get('class', '')})" if ticket else "",
+            "transactionId": f"TXN-{pnr}",
+            "totalCollectibleAmount": str(fare) if fare is not None else "",
+            "qrbase64String": "",
+            "placeOfSupply": "NA",
+            "stateNameCode": "Delhi/DL",
+            "passengers": [
+                {
+                    "name": p.get("name", ""),
+                    "age": p.get("age", ""),
+                    "gender": p.get("gender", ""),
+                    "booking_status": "CNF",
+                    "current_status": "CNF",
+                }
+                for p in passengers if isinstance(p, dict)
+            ],
+        }
+
+        html = self._ticket_render_service.render_html(dto)
+        os.makedirs(self._ers_output_dir, exist_ok=True)
+        out_path = os.path.join(self._ers_output_dir, f"ERS_{pnr}.html")
+        with open(out_path, "w", encoding="utf-8") as fh:
+            fh.write(html)
+        return out_path
 
     def _on_launch_all_tickets(self) -> None:
         if self._ticket_service is None:

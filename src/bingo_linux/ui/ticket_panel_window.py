@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from bingo_linux.services import BookingState
 from bingo_linux.ui.app_icon import apply_bingo_icon
 from bingo_linux.ui.window_drag import enable_window_drag
 
@@ -32,6 +33,11 @@ class TicketPanelWindow(QWidget):
 
     close_clicked = Signal(str, int)  # ticket_id, pair_index
     launch_worker = Signal(str, int, str)  # ticket_id, pair_index, worker_tag
+
+    # Tatkal opening window: AC classes open at 10:00, Non-AC at 11:00.
+    _TATKAL_HOUR_AC = 10
+    _TATKAL_HOUR_NON_AC = 11
+    _AC_CLASSES = frozenset({"1A", "2A", "3A", "CC", "EC"})
 
     def __init__(
         self,
@@ -59,6 +65,11 @@ class TicketPanelWindow(QWidget):
         self._setup_styles()
         self._load_ticket_data()
         enable_window_drag(self, self.head_frame)
+
+        # Countdown to Tatkal opening (10:00 AC / 11:00 Non-AC).
+        self._countdown_target = None
+        self._countdown_active = False
+        self.set_tatkal_countdown(self.ticket.get("class"))
 
         # Clock timer
         self._timer = QTimer(self)
@@ -438,8 +449,46 @@ class TicketPanelWindow(QWidget):
 
     def set_status(self, text: str, color_bg: str = "#0284c7") -> None:
         """Set banner status text and background color."""
-        self.banner_lbl.setText(text)
-        self.banner_frame.setStyleSheet(f"background: {color_bg};")
+        self.banner_text.setText(text)
+        self.banner.setStyleSheet(f"background: {color_bg};")
+
+    def set_booking_state(self, state: BookingState) -> None:
+        """Update the status banner and availability pill from a booking state.
+
+        Mirrors BookingWorkflowService states so the panel reflects the
+        live, user-driven booking flow (READY · STANDBY -> ... -> BOOKED).
+        """
+        configs = {
+            BookingState.IDLE: ("READY · STANDBY", "#0284c7", "AVAILABLE", True),
+            BookingState.IN_PROGRESS: ("ACTIVE · IN PROGRESS", "#0284c7", "VERIFYING", False),
+            BookingState.WAITING_FOR_2FA: ("WAITING · 2FA / OTP", "#ea580c", "AUTHENTICATING", False),
+            BookingState.WAITING_FOR_CAPTCHA: ("WAITING · CAPTCHA", "#f59e0b", "VERIFYING", False),
+            BookingState.PAYMENT: ("PAYMENT · PENDING", "#7c3aed", "PAYMENT DUE", False),
+            BookingState.COMPLETED: ("BOOKED", "#16a34a", "BOOKED", False),
+            BookingState.FAILED: ("FAILED", "#dc2626", "FAILED", False),
+            BookingState.CANCELLED: ("CANCELLED", "#dc2626", "CANCELLED", False),
+        }
+        text, color, pill, available = configs[state]
+        self.set_status(text, color)
+        self.set_availability(pill, is_available=available)
+
+    def set_tatkal_countdown(self, class_type: str | None = None) -> None:
+        """Arm the countdown to the next Tatkal opening for this ticket's class.
+
+        AC classes (1A/2A/3A/CC/EC) open at 10:00; all other classes at 11:00.
+        If today's opening has already passed, the target rolls to tomorrow.
+        """
+        hour = (
+            self._TATKAL_HOUR_AC
+            if str(class_type or "").upper() in self._AC_CLASSES
+            else self._TATKAL_HOUR_NON_AC
+        )
+        now = datetime.datetime.now()
+        target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
+        if now >= target:
+            target += datetime.timedelta(days=1)
+        self._countdown_target = target
+        self._countdown_active = True
 
     def set_availability(self, text: str, is_available: bool = True) -> None:
         """Set availability pill text and color."""
@@ -467,7 +516,23 @@ class TicketPanelWindow(QWidget):
             """)
 
     def _tick_clock(self) -> None:
-        self.clock_lbl.setText(datetime.datetime.now().strftime("%H:%M:%S"))
+        now = datetime.datetime.now()
+        if self._countdown_active and self._countdown_target is not None:
+            remaining = int((self._countdown_target - now).total_seconds())
+            if remaining <= 0:
+                self.clock_lbl.setText("TATKAL OPEN · BOOK NOW")
+                self.clock_lbl.setStyleSheet("""
+                    color: #34d399;
+                    font-family: "Consolas", monospace;
+                    font-size: 15px;
+                    font-weight: 800;
+                """)
+            else:
+                hours, rem = divmod(remaining, 3600)
+                minutes, seconds = divmod(rem, 60)
+                self.clock_lbl.setText(f"TATKAL IN {hours:02d}:{minutes:02d}:{seconds:02d}")
+        else:
+            self.clock_lbl.setText(now.strftime("%H:%M:%S"))
 
     def _on_close(self) -> None:
         self.close_clicked.emit(self.ticket_id, self.pair_index)
