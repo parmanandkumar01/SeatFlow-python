@@ -13,8 +13,8 @@ import unittest
 
 from PySide6.QtCore import QCoreApplication
 
-from bingo_linux.database.database import Database
-from bingo_linux.services.news_service import (
+from seatflow.database.database import Database
+from seatflow.services.news_service import (
     DEFAULT_NEWS_ITEMS,
     NewsNotFoundError,
     NewsService,

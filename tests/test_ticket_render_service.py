@@ -16,7 +16,7 @@ import json
 import tempfile
 import unittest
 
-from bingo_linux.services.ticket_render_service import TicketRenderService
+from seatflow.services.ticket_render_service import TicketRenderService
 
 
 class TicketRenderServiceTestCase(unittest.TestCase):

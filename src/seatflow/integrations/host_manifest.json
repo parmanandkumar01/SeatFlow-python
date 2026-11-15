@@ -1,0 +1,9 @@
+{
+  "name": "com.seatflow.bridge",
+  "description": "SeatFlow Browser Extension Bridge native-messaging host",
+  "path": "/usr/bin/python3",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://__EXTENSION_ID__/"
+  ]
+}

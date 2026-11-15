@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runner script for Bingo Linux Desktop Application
+# Runner script for SeatFlow Desktop Application
 
 set -e
 
@@ -14,5 +14,5 @@ fi
 
 export PYTHONPATH="$SCRIPT_DIR/src:${PYTHONPATH:-}"
 
-echo "Starting Bingo Linux..."
-exec "$PYTHON_EXEC" -m bingo_linux.main "$@"
+echo "Starting SeatFlow..."
+exec "$PYTHON_EXEC" -m seatflow.main "$@"

@@ -12,8 +12,8 @@ import unittest
 
 from PySide6.QtCore import QCoreApplication
 
-from bingo_linux.database.database import Database
-from bingo_linux.services.payment_service import (
+from seatflow.database.database import Database
+from seatflow.services.payment_service import (
     PaymentService,
     SUPPORTED_BANKS,
 )

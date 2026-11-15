@@ -17,7 +17,7 @@ import unittest
 
 from PySide6.QtWidgets import QApplication
 
-from bingo_linux.ui.update_window import UpdateWindow, UpdateState
+from seatflow.ui.update_window import UpdateWindow, UpdateState
 
 _app = QApplication.instance() or QApplication(["-platform", "offscreen"])
 

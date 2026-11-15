@@ -19,15 +19,15 @@ from unittest import mock
 
 from PySide6.QtWidgets import QApplication
 
-from bingo_linux.app.application import Application
-from bingo_linux.database.database import Database
-from bingo_linux.services.train_service import (
+from seatflow.app.application import Application
+from seatflow.database.database import Database
+from seatflow.services.train_service import (
     check_availability,
     fetch_train_list,
     resolve_station_code,
 )
-from bingo_linux.ui.book_window import BookWindow
-from bingo_linux.ui.train_results_window import ClassChip, TrainResultsWindow
+from seatflow.ui.book_window import BookWindow
+from seatflow.ui.train_results_window import ClassChip, TrainResultsWindow
 
 _app = QApplication.instance() or QApplication(["-platform", "offscreen"])
 
@@ -85,7 +85,7 @@ class TestStationCodeResolution(unittest.TestCase):
 class TestTrainSearchParity(unittest.TestCase):
     def _offline(self, from_code: str, to_code: str) -> dict:
         with mock.patch(
-            "bingo_linux.services.train_service.httpx.Client",
+            "seatflow.services.train_service.httpx.Client",
             side_effect=Exception("network offline"),
         ):
             return fetch_train_list(from_code, to_code, "2026-12-01")
@@ -248,7 +248,7 @@ class TestBookWindowAvailability(unittest.TestCase):
 class TestTrainResultsWindowAvailability(unittest.TestCase):
     def test_chip_clicked_emits_availability_and_fare(self):
         with mock.patch(
-            "bingo_linux.services.train_service.httpx.Client",
+            "seatflow.services.train_service.httpx.Client",
             side_effect=Exception("network offline"),
         ):
             res = fetch_train_list("SSM", "DDU", "2026-12-01")

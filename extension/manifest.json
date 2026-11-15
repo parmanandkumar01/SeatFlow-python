@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "SeatFlow Booking Assistant",
+  "version": "1.0.0",
+  "description": "User-assistance companion for SeatFlow (Browser Extension Bridge).",
+  "permissions": [
+    "nativeMessaging"
+  ],
+  "host_permissions": [
+    "https://www.irctc.co.in/*"
+  ],
+  "externally_connectable": {
+    "ids": ["*"],
+    "accepts_tls_channel_id": false
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.irctc.co.in/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "icons": {
+    "16": "icons/16.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  }
+}

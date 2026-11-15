@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bingo-linux"
+name = "seatflow"
 version = "0.1.0"
 description = "Native Linux desktop application for train booking profile management"
 requires-python = ">=3.10"
@@ -12,8 +12,8 @@ dependencies = [
 ]
 
 [project.scripts]
-bingo-linux = "src.bingo_linux.main:main"
+seatflow = "src.seatflow.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["bingo_linux*"]
+include = ["seatflow*"]

@@ -12,9 +12,9 @@ import os
 import tempfile
 import unittest
 
-from bingo_linux.database.database import Database
-from bingo_linux.security.vault import VaultService
-from bingo_linux.services import (
+from seatflow.database.database import Database
+from seatflow.security.vault import VaultService
+from seatflow.services import (
     DuplicateUsernameError,
     IrctcAccountService,
     InvalidTicketDataError,

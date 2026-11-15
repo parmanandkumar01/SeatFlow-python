@@ -1,4 +1,4 @@
-"""Tests for the shared ``bingo_linux.utils`` helpers.
+"""Tests for the shared ``seatflow.utils`` helpers.
 
 Every expectation here was cross-checked against the original renderer bundle
 ``assets/utils-pOwDnddK.js`` by loading the deobfuscated module in Node and
@@ -12,7 +12,7 @@ from __future__ import annotations
 import unittest
 from datetime import datetime, timedelta, timezone
 
-from bingo_linux.utils import (
+from seatflow.utils import (
     DEFAULT_FONT_SIZE,
     DEFAULT_HEIGHT,
     DEFAULT_LETTER_SPACING,

@@ -13,13 +13,13 @@ import unittest
 
 from PySide6.QtCore import QCoreApplication
 
-from bingo_linux.database.database import Database
-from bingo_linux.security.vault import VaultService
-from bingo_linux.services.history_service import HistoryService
-from bingo_linux.services.irctc_account_service import IrctcAccountService
-from bingo_linux.services.proxy_service import ProxyService
-from bingo_linux.services.ticket_service import TicketService
-from bingo_linux.services.transfer_service import (
+from seatflow.database.database import Database
+from seatflow.security.vault import VaultService
+from seatflow.services.history_service import HistoryService
+from seatflow.services.irctc_account_service import IrctcAccountService
+from seatflow.services.proxy_service import ProxyService
+from seatflow.services.ticket_service import TicketService
+from seatflow.services.transfer_service import (
     BACKUP_FORMAT_TAG,
     BackupDecryptionError,
     InvalidBackupFormatError,

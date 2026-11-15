@@ -11,16 +11,16 @@ import os
 import tempfile
 import unittest
 
-from bingo_linux.database.database import Database
-from bingo_linux.security.vault import (
+from seatflow.database.database import Database
+from seatflow.security.vault import (
     VaultService,
     VaultNotConfiguredError,
     VaultAlreadyConfiguredError,
     VaultLockedError,
     InvalidPasswordError,
 )
-from bingo_linux.security.encryption import EncryptionError
-from bingo_linux.repositories import IrctcAccountRepository, ProxyRepository
+from seatflow.security.encryption import EncryptionError
+from seatflow.repositories import IrctcAccountRepository, ProxyRepository
 
 
 class VaultTestCase(unittest.TestCase):

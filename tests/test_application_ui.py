@@ -8,8 +8,8 @@ import unittest
 
 from PySide6.QtWidgets import QApplication
 
-from bingo_linux.app.application import Application
-from bingo_linux.database.database import Database
+from seatflow.app.application import Application
+from seatflow.database.database import Database
 
 _app = QApplication.instance() or QApplication(["-platform", "offscreen"])
 

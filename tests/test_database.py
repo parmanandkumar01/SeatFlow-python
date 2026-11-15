@@ -10,8 +10,8 @@ import os
 import tempfile
 import unittest
 
-from bingo_linux.database.database import Database, DatabaseError, SCHEMA_VERSION
-from bingo_linux.repositories import (
+from seatflow.database.database import Database, DatabaseError, SCHEMA_VERSION
+from seatflow.repositories import (
     BookingHistoryRepository,
     FreechargeSessionRepository,
     IrctcAccountRepository,

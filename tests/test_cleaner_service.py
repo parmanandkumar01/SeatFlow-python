@@ -22,7 +22,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from bingo_linux.services.cleaner_service import CleanerService, CleanResult, format_bytes
+from seatflow.services.cleaner_service import CleanerService, CleanResult, format_bytes
 
 
 class CleanerServiceTestCase(unittest.TestCase):

@@ -27,10 +27,10 @@ from PySide6.QtWidgets import QApplication
 
 _app = QApplication.instance() or QApplication(["-platform", "offscreen"])
 
-from bingo_linux.app.application import Application  # noqa: E402
-from bingo_linux.database.database import Database  # noqa: E402
-from bingo_linux.services.news_service import NewsService  # noqa: E402
-from bingo_linux.ui.update_window import UpdateWindow  # noqa: E402
+from seatflow.app.application import Application  # noqa: E402
+from seatflow.database.database import Database  # noqa: E402
+from seatflow.services.news_service import NewsService  # noqa: E402
+from seatflow.ui.update_window import UpdateWindow  # noqa: E402
 
 try:  # httpx is an optional dependency used by train_service
     import httpx  # noqa: E402

@@ -24,14 +24,14 @@ from unittest import mock
 
 from PySide6.QtWidgets import QApplication
 
-from bingo_linux.app.application import Application
-from bingo_linux.database.database import Database
-from bingo_linux.security.vault import VaultService
-from bingo_linux.services.train_service import fetch_train_list
-from bingo_linux.ui.accounts_window import AccountsWindow
-from bingo_linux.ui.main_window import MainToolbarWindow
-from bingo_linux.ui.payment_window import is_qr_gateway, PaymentWindow
-from bingo_linux.ui.train_results_window import TrainResultsWindow
+from seatflow.app.application import Application
+from seatflow.database.database import Database
+from seatflow.security.vault import VaultService
+from seatflow.services.train_service import fetch_train_list
+from seatflow.ui.accounts_window import AccountsWindow
+from seatflow.ui.main_window import MainToolbarWindow
+from seatflow.ui.payment_window import is_qr_gateway, PaymentWindow
+from seatflow.ui.train_results_window import TrainResultsWindow
 
 _app = QApplication.instance() or QApplication(["-platform", "offscreen"])
 
@@ -237,7 +237,7 @@ class TestTrainFallback(_BaseTestCase):
 
     def test_offline_fallback_ndls_hwh(self) -> None:
         with mock.patch(
-            "bingo_linux.services.train_service.httpx.Client",
+            "seatflow.services.train_service.httpx.Client",
             side_effect=Exception("network offline"),
         ):
             res = fetch_train_list("NDLS", "HWH", "2026-12-01")
@@ -252,7 +252,7 @@ class TestTrainFallback(_BaseTestCase):
 
     def test_offline_unknown_route_returns_empty(self) -> None:
         with mock.patch(
-            "bingo_linux.services.train_service.httpx.Client",
+            "seatflow.services.train_service.httpx.Client",
             side_effect=Exception("network offline"),
         ):
             res = fetch_train_list("XYZ", "ABC", "2026-12-01")
@@ -260,7 +260,7 @@ class TestTrainFallback(_BaseTestCase):
 
     def test_train_results_window_displays_fallback_trains(self) -> None:
         with mock.patch(
-            "bingo_linux.services.train_service.httpx.Client",
+            "seatflow.services.train_service.httpx.Client",
             side_effect=Exception("network offline"),
         ):
             res = fetch_train_list("NDLS", "HWH", "2026-12-01")

@@ -21,8 +21,8 @@ import unittest
 from PySide6.QtCore import QDate
 from PySide6.QtWidgets import QApplication
 
-from bingo_linux.services.master_data_service import MasterDataService
-from bingo_linux.ui.dialogs.ticket_dialog import TicketDialog
+from seatflow.services.master_data_service import MasterDataService
+from seatflow.ui.dialogs.ticket_dialog import TicketDialog
 
 
 class TestMasterDataService(unittest.TestCase):

@@ -20,9 +20,9 @@ import unittest
 
 from PySide6.QtWidgets import QApplication
 
-from bingo_linux.database.database import Database
-from bingo_linux.security.vault import VaultService
-from bingo_linux.services import (
+from seatflow.database.database import Database
+from seatflow.security.vault import VaultService
+from seatflow.services import (
     BookingState,
     BookingWorkflowService,
     IrctcAccountService,
@@ -30,7 +30,7 @@ from bingo_linux.services import (
     TicketService,
     HistoryService,
 )
-from bingo_linux.ui.dialogs.booking_monitor_dialog import BookingMonitorDialog
+from seatflow.ui.dialogs.booking_monitor_dialog import BookingMonitorDialog
 
 _app = QApplication.instance() or QApplication([])
 
