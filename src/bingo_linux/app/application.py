@@ -199,7 +199,12 @@ class Application(QObject):
         self.unlocked.emit()
 
     def show_update_window(self) -> Optional[UpdateWindow]:
-        """Create and show the UpdateWindow, or return the existing one."""
+        """Create and show the local-only UpdateWindow, or return the existing one.
+
+        PRIVACY (default-deny): The UpdateWindow performs zero vendor network
+        calls. It is opened only on explicit user action and never invoked
+        automatically during application startup or in the background.
+        """
         if self._update_window is None:
             self._update_window = UpdateWindow()
             self._update_window.checking.connect(

@@ -2,16 +2,22 @@
 
 PyQt6 port of the original electron update.html:
 - Frameless, stays-on-top window with Bingo branding
-- Spinner → status text → progress bar → sub-status lifecycle
+- Spinner -> status text -> progress bar -> sub-status lifecycle
 - States: checking, downloading, installing, restarting
 - Signals wired to Application for update flow control
 
-All UI is local and offline — no network I/O in this window.
+PRIVACY (default-deny): This window is LOCAL-ONLY. It performs ZERO vendor
+network calls. All update material must be a locally provided package
+(selected and verified manually by the user). Remote update checks,
+auto-download, vendor telemetry, and license pings are intentionally absent.
+The signals below are UI state transitions only; they never trigger a network
+request.
 """
 
 from __future__ import annotations
 
-from typing import Literal
+import os
+from typing import Literal, Optional
 
 from PySide6.QtCore import QPropertyAnimation, Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QFont
@@ -67,6 +73,8 @@ class UpdateWindow(QWidget):
         self._state: UpdateState = "checking"
         self._progress_value = 0
         self._progress_animation: Optional[QPropertyAnimation] = None
+        #: Locally provided package path (manual selection only; zero network).
+        self._local_package_path: Optional[str] = None
 
         self._setup_ui()
         self._setup_styles()
@@ -332,6 +340,51 @@ class UpdateWindow(QWidget):
     def progress(self) -> int:
         """Return the current progress value."""
         return self._progress_value
+
+    # ------------------------------------------------------------------
+    # Local-only package handling (default-deny, zero vendor network)
+    # ------------------------------------------------------------------
+
+    def set_local_package(self, file_path: Optional[str]) -> None:
+        """Record a locally provided update package for manual verification.
+
+        Args:
+            file_path: Absolute path to a locally provided package file, or
+                None to clear the current selection. No network access is
+                performed; only the path is stored.
+        """
+        self._local_package_path = file_path
+
+    def local_package_path(self) -> Optional[str]:
+        """Return the currently selected local package path, if any."""
+        return self._local_package_path
+
+    def verify_local_package(self) -> bool:
+        """Verify the selected local package using local file I/O only.
+
+        Performs zero network access. Verification is limited to existence,
+        readability, and non-zero size of the locally provided package.
+
+        Returns:
+            True if a package is selected and passes local verification;
+            False otherwise (transitions to failed state).
+        """
+        path = self._local_package_path
+        if not path:
+            self.mark_failed("No local package selected")
+            return False
+        try:
+            if not os.path.exists(path):
+                raise FileNotFoundError(path)
+            if not os.path.isfile(path):
+                raise IsADirectoryError(path)
+            if os.path.getsize(path) <= 0:
+                raise ValueError("empty package")
+        except Exception as exc:  # noqa: BLE001 - surface verification failure
+            self.mark_failed(f"Local verification failed: {exc}")
+            return False
+        self.mark_completed()
+        return True
 
     # ------------------------------------------------------------------
     # Convenience lifecycle methods
