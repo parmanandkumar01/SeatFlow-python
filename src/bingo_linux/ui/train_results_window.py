@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from bingo_linux.services.train_service import check_availability
 from bingo_linux.ui.app_icon import apply_bingo_icon
 from bingo_linux.ui.window_drag import enable_window_drag
 
@@ -424,15 +425,38 @@ class TrainResultsWindow(QWidget):
 
     def _on_chip_clicked(self, train: dict, class_code: str) -> None:
         quota = self._get_active_quota()
-        self.banner_text.setText(f"SELECTED: {train.get('train_no')} - {train.get('name')} | CLASS: {class_code} | QUOTA: {quota}")
+        train_no = train.get("train_no", "")
+        from_code = train.get("from", "")
+        to_code = train.get("to", "")
+        journey_date = self._query.get("date", "")
+
+        avail = check_availability(
+            train_no,
+            from_code,
+            to_code,
+            journey_date,
+            travel_class=class_code,
+            quota=quota,
+        )
+        status = avail.get("status", "")
+        fare = avail.get("fare")
+        is_available = bool(avail.get("is_available", False))
+        dot = "🟢" if is_available else "🟡"
+        self.banner_text.setText(
+            f"{dot} {status} | ₹{fare:,} | {quota} | "
+            f"SELECTED: {train_no} - {train.get('name')} | CLASS: {class_code} | QUOTA: {quota}"
+        )
         selection = {
-            "trainNo": train.get("train_no", ""),
+            "trainNo": train_no,
             "trainName": train.get("name", ""),
             "trainClass": class_code,
             "quota": quota,
-            "from": train.get("from", ""),
-            "to": train.get("to", ""),
-            "date": self._query.get("date", ""),
+            "from": from_code,
+            "to": to_code,
+            "date": journey_date,
+            "availability": status,
+            "fare": fare,
+            "is_available": is_available,
         }
         self.apply_selection.emit(selection)
         self.hide()

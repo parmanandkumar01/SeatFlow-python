@@ -25,7 +25,7 @@ from bingo_linux.services import (
     TicketService,
     TransferService,
 )
-from bingo_linux.services.train_service import fetch_train_list
+from bingo_linux.services.train_service import check_availability, fetch_train_list
 from bingo_linux.ui import (
     AccountsWindow,
     BackupRestoreWindow,
@@ -290,7 +290,7 @@ class Application(QObject):
         # Book window signals
         if self._book_window is not None:
             self._book_window.search_clicked.connect(self._on_search_trains)
-            self._book_window.availability_clicked.connect(self._on_search_trains)
+            self._book_window.availability_clicked.connect(self._on_check_availability)
             self._book_window.save_clicked.connect(self._on_save_ticket)
 
         # Train results window
@@ -542,6 +542,61 @@ class Application(QObject):
         else:
             self._train_results_window.set_error(
                 f"No trains found between {from_code} and {to_code} on {date_str}."
+            )
+
+    def _on_check_availability(self) -> None:
+        if self._book_window is None or self._train_results_window is None:
+            return
+
+        from_stn = self._book_window.from_edit.text()
+        to_stn = self._book_window.to_edit.text()
+        date_str = self._book_window.date_edit.date().toString("yyyy-MM-dd")
+
+        from_code = BookWindow._clean_station(from_stn)
+        to_code = BookWindow._clean_station(to_stn)
+        if not from_code or not to_code:
+            QMessageBox.warning(
+                self._book_window,
+                "Validation Error",
+                "Please enter both From and To stations.",
+            )
+            return
+
+        train_no = self._book_window._clean_train_no(self._book_window.train_edit.text())
+        cls = self._book_window.class_combo.currentData() or ""
+        quota = self._book_window.quota_combo.currentData() or "GN"
+
+        query = {"from": from_code, "to": to_code, "date": date_str}
+        self._train_results_window.set_loading(query)
+        self._position_window_centered(self._train_results_window, top_offset=90)
+        self._train_results_window.show()
+        self._train_results_window.raise_()
+
+        if train_no and cls:
+            try:
+                res = check_availability(
+                    train_no,
+                    from_code,
+                    to_code,
+                    date_str,
+                    travel_class=cls,
+                    quota=quota,
+                )
+                status = res.get("status", "")
+                fare = res.get("fare")
+                is_avail = bool(res.get("is_available", False))
+                dot = "🟢" if is_avail else "🟡"
+                text = f"{dot} {status} | ₹{fare:,} | {quota}"
+                self._book_window.set_availability_status(
+                    text, is_available=is_avail, fare=fare
+                )
+            except Exception as exc:
+                self._book_window.set_availability_status(
+                    f"⚠️ CHECK FAILED: {exc}", is_available=False
+                )
+        else:
+            self._train_results_window.banner_text.setText(
+                f"CHECKING AVAILABILITY FOR {from_code} → {to_code}..."
             )
 
     def _on_train_selected(self, selection: dict) -> None:

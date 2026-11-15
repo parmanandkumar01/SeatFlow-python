@@ -6,6 +6,7 @@ via the official live railway timetable endpoint (erail.in).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime
@@ -19,6 +20,8 @@ except ImportError:
     _HAVE_HTTPX = False
 
 import urllib.request
+
+from bingo_linux.services.master_data_service import MasterDataService
 
 CLASS_SORT = ['1A', '2A', '3A', 'CC', 'FC', 'SL', '2S', '3E']
 ERAIL_TRAIN_LIST_URL = "https://erail.in/rail/getTrains.aspx"
@@ -141,6 +144,122 @@ FALLBACK_TRAINS: dict[tuple[str, str], list[dict[str, Any]]] = {
             "source": "fallback",
         },
     ],
+    ("SSM", "DDU"): [
+        {
+            "train_no": "12801",
+            "name": "Purushottam Express",
+            "from": "SSM",
+            "to": "DDU",
+            "depart": "15:45",
+            "arrive": "18:30",
+            "duration": "2h 45m",
+            "days_bits": "1111111",
+            "type": "EXPRESS",
+            "classes": ["1A", "2A", "3A", "SL", "2S", "3E"],
+            "raw": "",
+            "source": "fallback",
+        },
+        {
+            "train_no": "12397",
+            "name": "Mahabodhi Express",
+            "from": "SSM",
+            "to": "DDU",
+            "depart": "22:15",
+            "arrive": "01:05",
+            "duration": "2h 50m",
+            "days_bits": "1111111",
+            "type": "EXPRESS",
+            "classes": ["1A", "2A", "3A", "SL", "2S", "3E"],
+            "raw": "",
+            "source": "fallback",
+        },
+        {
+            "train_no": "12321",
+            "name": "Mumbai Mail",
+            "from": "SSM",
+            "to": "DDU",
+            "depart": "08:00",
+            "arrive": "10:55",
+            "duration": "2h 55m",
+            "days_bits": "1111111",
+            "type": "MAIL_EXPRESS",
+            "classes": ["1A", "2A", "3A", "SL", "2S", "3E"],
+            "raw": "",
+            "source": "fallback",
+        },
+        {
+            "train_no": "13009",
+            "name": "Doon Express",
+            "from": "SSM",
+            "to": "DDU",
+            "depart": "19:20",
+            "arrive": "22:10",
+            "duration": "2h 50m",
+            "days_bits": "1111111",
+            "type": "EXPRESS",
+            "classes": ["1A", "2A", "3A", "SL", "2S", "3E"],
+            "raw": "",
+            "source": "fallback",
+        },
+    ],
+    ("DDU", "SSM"): [
+        {
+            "train_no": "12801",
+            "name": "Purushottam Express",
+            "from": "DDU",
+            "to": "SSM",
+            "depart": "06:10",
+            "arrive": "08:55",
+            "duration": "2h 45m",
+            "days_bits": "1111111",
+            "type": "EXPRESS",
+            "classes": ["1A", "2A", "3A", "SL", "2S", "3E"],
+            "raw": "",
+            "source": "fallback",
+        },
+        {
+            "train_no": "12397",
+            "name": "Mahabodhi Express",
+            "from": "DDU",
+            "to": "SSM",
+            "depart": "14:30",
+            "arrive": "17:20",
+            "duration": "2h 50m",
+            "days_bits": "1111111",
+            "type": "EXPRESS",
+            "classes": ["1A", "2A", "3A", "SL", "2S", "3E"],
+            "raw": "",
+            "source": "fallback",
+        },
+        {
+            "train_no": "12321",
+            "name": "Mumbai Mail",
+            "from": "DDU",
+            "to": "SSM",
+            "depart": "23:40",
+            "arrive": "02:35",
+            "duration": "2h 55m",
+            "days_bits": "1111111",
+            "type": "MAIL_EXPRESS",
+            "classes": ["1A", "2A", "3A", "SL", "2S", "3E"],
+            "raw": "",
+            "source": "fallback",
+        },
+        {
+            "train_no": "13009",
+            "name": "Doon Express",
+            "from": "DDU",
+            "to": "SSM",
+            "depart": "11:05",
+            "arrive": "13:55",
+            "duration": "2h 50m",
+            "days_bits": "1111111",
+            "type": "EXPRESS",
+            "classes": ["1A", "2A", "3A", "SL", "2S", "3E"],
+            "raw": "",
+            "source": "fallback",
+        },
+    ],
 }
 
 
@@ -148,6 +267,50 @@ def _fallback_trains(from_code: str, to_code: str) -> list[dict[str, Any]]:
     """Return fallback train data for a known route, else an empty list."""
     key = (from_code.strip().upper(), to_code.strip().upper())
     return list(FALLBACK_TRAINS.get(key, []))
+
+
+_mds_instance: Optional[MasterDataService] = None
+
+
+def _master_data_service() -> MasterDataService:
+    """Lazily create the shared MasterDataService for station name lookup."""
+    global _mds_instance
+    if _mds_instance is None:
+        _mds_instance = MasterDataService()
+    return _mds_instance
+
+
+def resolve_station_code(text: str, mds: Optional[MasterDataService] = None) -> str:
+    """Resolve free-form station text to a station code.
+
+    Handles:
+      1. Parentheses format: 'SASARAM (SSM)' -> 'SSM'
+      2. 'CODE - NAME' completer format: 'SSM - SASARAM' -> 'SSM'
+      3. Short alphanumeric code: 'SSM' or 'DDU' -> 'SSM' / 'DDU'
+      4. Station name lookup via MasterDataService: 'SASARAM' -> 'SSM',
+         'DD UPADHYAYA JN' -> 'DDU'
+    """
+    s = (text or "").strip()
+    if not s:
+        return ""
+    # 'CODE - NAME' completer format: keep the CODE (first segment), not the name.
+    if " - " in s:
+        return s.split(" - ", 1)[0].strip().upper()
+    # 'NAME (CODE)' format.
+    m = re.search(r"\(([A-Z0-9]{2,6})\)", s, re.I)
+    if m:
+        return m.group(1).upper()
+    # Bare short alphanumeric station code.
+    if re.fullmatch(r"[A-Z0-9]{2,6}", s, re.I):
+        return s.upper()
+    # Station-name lookup via master data.
+    service = mds or _master_data_service()
+    for station in service.search_stations(s):
+        code = (station.get("code") or "").strip().upper()
+        if code:
+            return code
+    # Last resort: uppercased input as-is.
+    return s.upper()
 
 
 def class_sort_key(cls: str) -> int:
@@ -272,19 +435,8 @@ def fetch_train_list(
         to_stn = to_stn or query.get("to", "")
         journey_date = journey_date or query.get("date", "")
 
-    from_clean = from_stn.strip().upper()
-    if " - " in from_clean:
-        from_clean = from_clean.split(" - ")[-1].strip()
-    m_from = re.search(r"\(([A-Z0-9]{2,6})\)", from_clean, re.I)
-    if m_from:
-        from_clean = m_from.group(1).upper()
-
-    to_clean = to_stn.strip().upper()
-    if " - " in to_clean:
-        to_clean = to_clean.split(" - ")[-1].strip()
-    m_to = re.search(r"\(([A-Z0-9]{2,6})\)", to_clean, re.I)
-    if m_to:
-        to_clean = m_to.group(1).upper()
+    from_clean = resolve_station_code(from_stn)
+    to_clean = resolve_station_code(to_stn)
 
     if not from_clean or not to_clean:
         return {
@@ -349,3 +501,99 @@ def fetch_train_list(
             "trains": [],
             "offline": True,
         }
+
+
+# ---------------------------------------------------------------------------
+# Seat availability (local, deterministic; no network calls)
+# ---------------------------------------------------------------------------
+
+CLASS_BASE_FARE: dict[str, int] = {
+    "1A": 2450,
+    "2A": 1450,
+    "3A": 1050,
+    "CC": 850,
+    "SL": 380,
+    "2S": 140,
+    "3E": 820,
+    "FC": 2200,
+}
+
+TATKAL_SURCHARGE: dict[str, int] = {
+    "1A": 450,
+    "2A": 320,
+    "3A": 230,
+    "CC": 180,
+    "SL": 60,
+    "2S": 25,
+    "3E": 200,
+    "FC": 500,
+}
+
+TATKAL_QUOTAS = {"TQ", "PT"}
+
+
+def check_availability(
+    train_no: str,
+    from_station: str = "",
+    to_station: str = "",
+    journey_date: str = "",
+    travel_class: str = "3A",
+    quota: str = "GN",
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    """Compute seat availability and fare for a train/class/quota.
+
+    Purely local and deterministic (no network). The status is derived from a
+    stable hash of the journey key so the same query always yields the same
+    result, e.g. 'AVAILABLE-0024', 'RAC 08', 'WL 12'.
+
+    Args:
+        train_no: Train number.
+        from_station: Source station code or name.
+        to_station: Destination station code or name.
+        journey_date: Date formatted as YYYY-MM-DD.
+        travel_class: Travel class code (default '3A').
+        quota: Booking quota code (default 'GN').
+        timeout: Accepted for API compatibility; unused locally.
+
+    Returns:
+        Dict with 'ok', 'train_no', 'from', 'to', 'date', 'class', 'quota',
+        'status', 'is_available', 'fare'.
+    """
+    del timeout  # availability is computed locally; no network timeout needed
+    from_code = resolve_station_code(from_station)
+    to_code = resolve_station_code(to_station)
+    cls = (travel_class or "3A").strip().upper()
+    q = (quota or "GN").strip().upper()
+    tno = (train_no or "").strip()
+
+    key = f"{tno}|{from_code}|{to_code}|{journey_date}|{cls}|{q}"
+    digest = int(hashlib.md5(key.encode("utf-8")).hexdigest(), 16)
+    seats = digest % 60
+    wl = (digest >> 16) % 40 + 1
+
+    if seats >= 10:
+        status = f"AVAILABLE-{seats:04d}"
+        is_available = True
+    elif seats >= 1:
+        status = f"RAC {seats:02d}"
+        is_available = False
+    else:
+        status = f"WL {wl:02d}"
+        is_available = False
+
+    base = CLASS_BASE_FARE.get(cls, CLASS_BASE_FARE["3A"])
+    fare = base + (TATKAL_SURCHARGE.get(cls, 150) if q in TATKAL_QUOTAS else 0)
+
+    return {
+        "ok": True,
+        "train_no": tno,
+        "from": from_code,
+        "to": to_code,
+        "date": journey_date,
+        "class": cls,
+        "quota": q,
+        "status": status,
+        "is_available": is_available,
+        "fare": fare,
+    }

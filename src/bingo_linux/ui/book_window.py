@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from bingo_linux.services.master_data_service import MasterDataService
+from bingo_linux.services.train_service import resolve_station_code
 from bingo_linux.ui.app_icon import apply_bingo_icon, bingo_logo_pixmap
 from bingo_linux.ui.widgets.clickable_date import ClickableDateEdit
 from bingo_linux.ui.widgets.toggle_switch import ToggleSwitch, YesNoToggle
@@ -293,6 +294,13 @@ class BookWindow(QWidget):
         row2.addLayout(avail_col)
 
         bl.addLayout(row2)
+
+        # Availability pill (green = available, amber = RAC/WL)
+        self.avail_pill = QLabel("")
+        self.avail_pill.setObjectName("bookAvailPill")
+        self.avail_pill.setFixedHeight(30)
+        self.avail_pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        bl.addWidget(self.avail_pill)
 
         # -------------------------------------------------------------
         # Section 2: PASSENGER INFORMATION (Max 6)
@@ -602,6 +610,16 @@ class BookWindow(QWidget):
                 margin-top: 10px;
                 margin-bottom: 4px;
             }
+            QLabel#bookAvailPill {
+                background: #064e3b;
+                color: #bbf7d0;
+                border: 1px solid #10b981;
+                border-radius: 6px;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 0.5px;
+                padding: 2px 10px;
+            }
             QPushButton#btnSwap {
                 background: #081422;
                 border: 1px solid #1e3a5f;
@@ -853,15 +871,7 @@ class BookWindow(QWidget):
 
     @staticmethod
     def _clean_station(text: str) -> str:
-        s = (text or "").strip()
-        if not s:
-            return ""
-        if " - " in s:
-            return s.split(" - ")[-1].strip().upper()
-        m = re.search(r"\(([A-Z0-9]{2,6})\)", s, re.I)
-        if m:
-            return m.group(1).upper()
-        return s.upper()
+        return resolve_station_code(text)
 
     @staticmethod
     def _clean_train_no(text: str) -> str:
@@ -901,7 +911,47 @@ class BookWindow(QWidget):
         if selection.get("to"):
             self.to_edit.setText(selection["to"])
 
+        if selection.get("availability") or selection.get("fare") is not None:
+            self.set_availability_status(
+                selection.get("availability", ""),
+                is_available=bool(selection.get("is_available", True)),
+                fare=selection.get("fare"),
+            )
+
         self._auto_generate_ticket_name()
+
+    def set_availability_status(self, text: str, is_available: bool = True, fare: int | None = None) -> None:
+        """Show/update the availability pill below the Class/Quota row."""
+        display = (text or "").strip()
+        if fare is not None and "₹" not in display:
+            display = f"{display} | ₹{fare:,}" if display else f"₹{fare:,}"
+        self.avail_pill.setText(display)
+        if is_available:
+            self.avail_pill.setStyleSheet("""
+                QLabel {
+                    background: #064e3b;
+                    color: #bbf7d0;
+                    border: 1px solid #10b981;
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                    padding: 2px 10px;
+                }
+            """)
+        else:
+            self.avail_pill.setStyleSheet("""
+                QLabel {
+                    background: #7c2d12;
+                    color: #fdba74;
+                    border: 1px solid #f97316;
+                    border-radius: 6px;
+                    font-size: 11px;
+                    font-weight: 800;
+                    letter-spacing: 0.5px;
+                    padding: 2px 10px;
+                }
+            """)
 
     def set_accounts(self, accounts: list[dict]) -> None:
         """Populate IRCTC accounts combo."""
