@@ -546,7 +546,10 @@ class PaymentWindow(QWidget):
 
     def _on_gateway_changed(self) -> None:
         gw = self.gateway_combo.currentData() or self.gateway_combo.currentText()
-        if is_qr_gateway(gw):
+        is_qr = is_qr_gateway(gw)
+        self.upi_input.setEnabled(not is_qr)
+        if is_qr:
+            self.upi_input.setText("")
             self.upi_input.setPlaceholderText("Dynamic QR code at checkout (No UPI ID required)")
         else:
             self.upi_input.setPlaceholderText("yourname@bank")
@@ -570,7 +573,19 @@ class PaymentWindow(QWidget):
         self.toast.show_message(f"Added {gw}")
 
     def show_toast(self, message: str) -> None:
-        self.toast.show_message(message)
+        """Display non-blocking floating status toast.
+
+        Never raises: the toast is lazily created and any underlying
+        Qt failure is swallowed.
+        """
+        try:
+            toast = getattr(self, "toast", None)
+            if toast is None:
+                toast = ToastNotification(self)
+                self.toast = toast
+            toast.show_message(message)
+        except Exception:
+            pass
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

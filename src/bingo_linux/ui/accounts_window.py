@@ -565,8 +565,20 @@ class AccountsWindow(QWidget):
             self.delete_account.emit(acct_id)
 
     def show_toast(self, message: str) -> None:
-        """Display non-blocking floating status toast."""
-        self.toast.show_message(message)
+        """Display non-blocking floating status toast.
+
+        Never raises: the toast is lazily created and any underlying
+        Qt failure is swallowed so callers (e.g. Application handlers)
+        cannot crash on a toast.
+        """
+        try:
+            toast = getattr(self, "toast", None)
+            if toast is None:
+                toast = ToastNotification(self)
+                self.toast = toast
+            toast.show_message(message)
+        except Exception:
+            pass
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

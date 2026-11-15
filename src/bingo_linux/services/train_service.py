@@ -27,6 +27,128 @@ DEFAULT_UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
+# Fallback train data for common routes used when the live endpoint is
+# offline or returns no results. Each train carries class chips so the
+# TrainResultsWindow can render class/quota selection.
+FALLBACK_TRAINS: dict[tuple[str, str], list[dict[str, Any]]] = {
+    ("NDLS", "HWH"): [
+        {
+            "train_no": "12301",
+            "name": "Howrah Rajdhani Express",
+            "from": "NDLS",
+            "to": "HWH",
+            "depart": "16:55",
+            "arrive": "10:05",
+            "duration": "17h 10m",
+            "days_bits": "1111111",
+            "type": "RAJDHANI",
+            "classes": ["1A", "2A", "3A", "CC"],
+            "raw": "",
+            "source": "fallback",
+        },
+        {
+            "train_no": "12303",
+            "name": "Howrah Express",
+            "from": "NDLS",
+            "to": "HWH",
+            "depart": "09:45",
+            "arrive": "04:40",
+            "duration": "18h 55m",
+            "days_bits": "1111111",
+            "type": "EXPRESS",
+            "classes": ["2A", "3A", "SL", "2S"],
+            "raw": "",
+            "source": "fallback",
+        },
+    ],
+    ("HWH", "NDLS"): [
+        {
+            "train_no": "12302",
+            "name": "Howrah Rajdhani Express",
+            "from": "HWH",
+            "to": "NDLS",
+            "depart": "16:50",
+            "arrive": "10:05",
+            "duration": "17h 15m",
+            "days_bits": "1111111",
+            "type": "RAJDHANI",
+            "classes": ["1A", "2A", "3A", "CC"],
+            "raw": "",
+            "source": "fallback",
+        },
+    ],
+    ("NDLS", "CNB"): [
+        {
+            "train_no": "12401",
+            "name": "Kanpur Shatabdi Express",
+            "from": "NDLS",
+            "to": "CNB",
+            "depart": "06:10",
+            "arrive": "09:35",
+            "duration": "3h 25m",
+            "days_bits": "1111111",
+            "type": "SHATABDI",
+            "classes": ["CC", "EC"],
+            "raw": "",
+            "source": "fallback",
+        },
+    ],
+    ("MMCT", "NDLS"): [
+        {
+            "train_no": "12951",
+            "name": "Mumbai Rajdhani Express",
+            "from": "MMCT",
+            "to": "NDLS",
+            "depart": "16:25",
+            "arrive": "08:35",
+            "duration": "16h 10m",
+            "days_bits": "1111111",
+            "type": "RAJDHANI",
+            "classes": ["1A", "2A", "3A"],
+            "raw": "",
+            "source": "fallback",
+        },
+    ],
+    ("SBC", "NDLS"): [
+        {
+            "train_no": "12627",
+            "name": "Karnataka Express",
+            "from": "SBC",
+            "to": "NDLS",
+            "depart": "11:00",
+            "arrive": "06:50",
+            "duration": "19h 50m",
+            "days_bits": "1111111",
+            "type": "EXPRESS",
+            "classes": ["2A", "3A", "SL", "2S"],
+            "raw": "",
+            "source": "fallback",
+        },
+    ],
+    ("HYB", "NDLS"): [
+        {
+            "train_no": "12703",
+            "name": "Telangana Express",
+            "from": "HYB",
+            "to": "NDLS",
+            "depart": "14:40",
+            "arrive": "09:20",
+            "duration": "18h 40m",
+            "days_bits": "1111111",
+            "type": "EXPRESS",
+            "classes": ["2A", "3A", "SL"],
+            "raw": "",
+            "source": "fallback",
+        },
+    ],
+}
+
+
+def _fallback_trains(from_code: str, to_code: str) -> list[dict[str, Any]]:
+    """Return fallback train data for a known route, else an empty list."""
+    key = (from_code.strip().upper(), to_code.strip().upper())
+    return list(FALLBACK_TRAINS.get(key, []))
+
 
 def class_sort_key(cls: str) -> int:
     """Return sort index for travel classes."""
@@ -209,8 +331,21 @@ def fetch_train_list(
             "trains": trains,
         }
     except Exception as exc:
+        fallback = _fallback_trains(from_clean, to_clean)
+        if fallback:
+            return {
+                "ok": True,
+                "url": url,
+                "from": from_clean,
+                "to": to_clean,
+                "date": journey_date.strip(),
+                "trains": fallback,
+                "error": f"Live train service offline; showing fallback data ({exc})",
+                "offline": True,
+            }
         return {
             "ok": False,
             "error": f"Failed to fetch live trains: {exc}",
             "trains": [],
+            "offline": True,
         }

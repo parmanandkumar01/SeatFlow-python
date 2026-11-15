@@ -13,6 +13,7 @@ from bingo_linux.database.database import Database
 from bingo_linux.security.vault import VaultService
 from bingo_linux.services import (
     BookingWorkflowService,
+    CleanerService,
     HistoryService,
     IrctcAccountService,
     MasterDataService,
@@ -39,6 +40,7 @@ from bingo_linux.ui import (
     TicketsWindow,
     TokensWindow,
     TrainResultsWindow,
+    UpdateWindow,
     VaultWindow,
     place_toolbar_top,
 )
@@ -75,6 +77,7 @@ class Application(QObject):
         self._payment_service: Optional[PaymentService] = None
         self._master_data_service: Optional[MasterDataService] = None
         self._booking_service: Optional[BookingWorkflowService] = None
+        self._cleaner_service: Optional[CleanerService] = None
 
         # UI Window instances
         self._main_window: Optional[MainToolbarWindow] = None
@@ -90,6 +93,7 @@ class Application(QObject):
         self._tokens_window: Optional[TokensWindow] = None
         self._pair_windows: dict[str, TicketPanelWindow] = {}
         self._vault_window: Optional[VaultWindow] = None
+        self._update_window: Optional[UpdateWindow] = None
 
     def _initialize_services(self) -> None:
         """Initialize database, vault, and service layer."""
@@ -97,17 +101,18 @@ class Application(QObject):
             self._db = Database()
             self._db.initialize_schema()
 
-        self._vault = VaultService(self._db)
-        if not self._vault.is_configured():
-            try:
-                self._vault.initialize("bingo-pro-master-key")
-            except Exception:
-                pass
-        elif not self._vault.is_unlocked():
-            try:
-                self._vault.unlock("bingo-pro-master-key")
-            except Exception:
-                pass
+        if self._vault is None:
+            self._vault = VaultService(self._db)
+            if not self._vault.is_configured():
+                try:
+                    self._vault.initialize("bingo-pro-master-key")
+                except Exception:
+                    pass
+            elif not self._vault.is_unlocked():
+                try:
+                    self._vault.unlock("bingo-pro-master-key")
+                except Exception:
+                    pass
 
         self._account_service = IrctcAccountService(self._db, self._vault)
         self._ticket_service = TicketService(self._db)
@@ -119,6 +124,7 @@ class Application(QObject):
         self._news_service = NewsService(self._db)
         self._payment_service = PaymentService(self._db)
         self._master_data_service = MasterDataService()
+        self._cleaner_service = CleanerService()
         self._booking_service = BookingWorkflowService(
             self._db,
             history_service=self._history_service,
@@ -192,6 +198,31 @@ class Application(QObject):
             self._main_window.show()
         self.unlocked.emit()
 
+    def show_update_window(self) -> Optional[UpdateWindow]:
+        """Create and show the UpdateWindow, or return the existing one."""
+        if self._update_window is None:
+            self._update_window = UpdateWindow()
+            self._update_window.checking.connect(
+                lambda: self.event_emitted.emit("update_checking", "Checking for updates…")
+            )
+            self._update_window.downloading.connect(
+                lambda: self.event_emitted.emit("update_downloading", "Downloading update…")
+            )
+            self._update_window.installing.connect(
+                lambda: self.event_emitted.emit("update_installing", "Installing update…")
+            )
+            self._update_window.restarting.connect(
+                lambda: self.event_emitted.emit("update_restarting", "Restarting application…")
+            )
+            self._update_window.completed.connect(
+                lambda: self.event_emitted.emit("update_completed", "Update complete.")
+            )
+            self._update_window.failed.connect(
+                lambda reason: self.event_emitted.emit("update_failed", f"Update failed: {reason}")
+            )
+        self._update_window.show()
+        return self._update_window
+
     def _create_floating_windows(self) -> None:
         """Create all secondary floating windows (extracted for reuse)."""
         self._book_window = BookWindow(master_data_service=self._master_data_service)
@@ -204,6 +235,30 @@ class Application(QObject):
         self._history_window = HistoryWindow()
         self._backup_restore_window = BackupRestoreWindow()
         self._tokens_window = TokensWindow()
+
+        # All secondary floating windows start hidden. Only the main toolbar
+        # (or VaultWindow when the vault is locked) is shown at startup.
+        self._hide_all_floating_windows()
+
+    def _hide_all_floating_windows(self) -> None:
+        """Hide every secondary floating window so none leaks at startup."""
+        for w in [
+            self._book_window,
+            self._tickets_window,
+            self._train_results_window,
+            self._accounts_window,
+            self._payment_window,
+            self._settings_window,
+            self._proxies_window,
+            self._history_window,
+            self._backup_restore_window,
+            self._tokens_window,
+        ]:
+            if w is not None:
+                try:
+                    w.hide()
+                except Exception:
+                    pass
 
     def _create_all_windows(self) -> None:
         """Create the main toolbar and all secondary floating windows."""
@@ -419,11 +474,18 @@ class Application(QObject):
     def _on_cleanup_cache(self) -> None:
         if self._settings_window is not None:
             self._settings_window.hide()
-            QMessageBox.information(
-                self._settings_window,
-                "Clean Up",
-                "Local temporary caches and history clean up completed.",
-            )
+        stats = {}
+        if self._cleaner_service is not None:
+            try:
+                stats = self._cleaner_service.clean_all()
+            except Exception:
+                pass
+        mb = stats.get("mb_freed", 0.0)
+        files = stats.get("files_removed", 0)
+        msg = f"Cleaned {files} files ({mb} MB freed).\nLocal temporary caches and history clean up completed."
+        parent = self._settings_window or self._main_window
+        if parent is not None:
+            QMessageBox.information(parent, "Clean Up", msg)
 
     def _on_manual_login_changed(self, enabled: bool) -> None:
         if self._settings_service is not None:
@@ -865,18 +927,26 @@ class Application(QObject):
             if w is not None:
                 try:
                     w.close()
+                    w.deleteLater()
                 except Exception:
                     pass
         for pw in list(self._pair_windows.values()):
             try:
                 pw.close()
+                pw.deleteLater()
             except Exception:
                 pass
         self._pair_windows.clear()
         if self._db is not None:
-            self._db.close()
+            try:
+                self._db.close()
+            except Exception:
+                pass
             self._db = None
 
         app = QApplication.instance()
         if app is not None:
-            app.quit()
+            try:
+                app.quit()
+            except Exception:
+                pass

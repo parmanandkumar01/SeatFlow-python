@@ -13,6 +13,7 @@ from bingo_linux.ui.ticket_panel_window import TicketPanelWindow
 from bingo_linux.ui.tickets_window import TicketsWindow
 from bingo_linux.ui.tokens_window import TokensWindow
 from bingo_linux.ui.train_results_window import TrainResultsWindow
+from bingo_linux.ui.update_window import UpdateWindow
 from bingo_linux.ui.vault_window import VaultWindow
 from bingo_linux.ui.window_drag import enable_window_drag
 
@@ -30,6 +31,7 @@ __all__ = [
     "TicketsWindow",
     "TokensWindow",
     "TrainResultsWindow",
+    "UpdateWindow",
     "VaultWindow",
     "apply_bingo_icon",
     "bingo_logo_pixmap",
