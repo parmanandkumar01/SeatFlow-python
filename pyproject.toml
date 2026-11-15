@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bingo-linux"
+version = "0.1.0"
+description = "Native Linux desktop application for train booking profile management"
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.0.0",
+]
+
+[project.scripts]
+bingo-linux = "src.bingo_linux.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["bingo_linux*"]
