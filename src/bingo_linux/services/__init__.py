@@ -1,5 +1,14 @@
 """Services package."""
 
+from bingo_linux.services.booking_execution_service import (
+    BookingExecutionError,
+    BookingExecutionService,
+    ExecutionSessionNotFoundError,
+    METHOD_TO_WORKER,
+    SUPPORTED_WORKERS,
+    WORKER_METHODS,
+    WorkerNotSupportedError,
+)
 from bingo_linux.services.booking_service import (
     BookingSessionError,
     BookingState,
@@ -87,14 +96,21 @@ from bingo_linux.services.transfer_service import (
 __all__ = [
     "BACKUP_FORMAT_TAG",
     "BackupDecryptionError",
+    "BookingExecutionError",
+    "BookingExecutionService",
     "BookingSessionError",
     "BookingState",
     "BookingWorkflowError",
     "BookingWorkflowService",
+    "ExecutionSessionNotFoundError",
     "InvalidBackupFormatError",
     "InvalidCheckpointError",
     "InvalidExportPasswordError",
     "InvalidTransitionError",
+    "METHOD_TO_WORKER",
+    "SUPPORTED_WORKERS",
+    "WORKER_METHODS",
+    "WorkerNotSupportedError",
     "FILTER_30D",
     "FILTER_7D",
     "FILTER_ALL",

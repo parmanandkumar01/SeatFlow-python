@@ -39,6 +39,7 @@ from bingo_linux.ui import (
     TicketsWindow,
     TokensWindow,
     TrainResultsWindow,
+    VaultWindow,
     place_toolbar_top,
 )
 from bingo_linux.ui.theme import DARK_THEME_STYLE
@@ -52,6 +53,9 @@ class Application(QObject):
 
     #: Emitted when the application is ready to show the main window.
     ready = Signal()
+
+    #: Emitted when the vault has been unlocked and the main app is shown.
+    unlocked = Signal()
 
     #: Emitted when the application is shutting down.
     shutting_down = Signal()
@@ -85,6 +89,7 @@ class Application(QObject):
         self._backup_restore_window: Optional[BackupRestoreWindow] = None
         self._tokens_window: Optional[TokensWindow] = None
         self._pair_windows: dict[str, TicketPanelWindow] = {}
+        self._vault_window: Optional[VaultWindow] = None
 
     def _initialize_services(self) -> None:
         """Initialize database, vault, and service layer."""
@@ -123,28 +128,30 @@ class Application(QObject):
         )
 
     def create_main_window(self) -> MainWindow:
-        """Create and return the main application window."""
+        """Create and return the main application window.
+
+        If the vault is locked or unconfigured, the VaultWindow is shown
+        first; the main toolbar is created only after the vault is unlocked.
+        """
         if self._main_window is None:
             qapp = QApplication.instance()
             if qapp is not None:
                 qapp.setStyleSheet(DARK_THEME_STYLE)
 
             self._initialize_services()
+
+            # Vault gate: show VaultWindow unless vault is already unlocked.
+            if not self._vault.is_unlocked():
+                self._create_vault_window()
+                # Return a lightweight placeholder so callers get a QWidget.
+                # The real main window is created after vault unlock.
+                return self._vault_window  # type: ignore[return-value]
+
             self._main_window = MainToolbarWindow()
             place_toolbar_top(self._main_window)
 
             # Secondary floating windows
-            self._book_window = BookWindow(master_data_service=self._master_data_service)
-            self._tickets_window = TicketsWindow()
-            self._train_results_window = TrainResultsWindow()
-            self._accounts_window = AccountsWindow()
-            self._payment_window = PaymentWindow()
-            self._settings_window = SettingsWindow()
-            self._proxies_window = ProxiesWindow()
-            self._history_window = HistoryWindow()
-            self._backup_restore_window = BackupRestoreWindow()
-            self._tokens_window = TokensWindow()
-
+            self._create_floating_windows()
             self._connect_signals()
 
             # Position tickets window below toolbar
@@ -152,6 +159,63 @@ class Application(QObject):
             self._refresh_tickets_window()
 
         return self._main_window
+
+    def _create_vault_window(self) -> None:
+        """Create and show the VaultWindow, gating access to the main app."""
+        self._vault_window = VaultWindow()
+        self._vault_window.set_vault(self._vault)
+        self._vault_window.set_mode(
+            "setup" if not self._vault.is_configured() else "unlock"
+        )
+        self._vault_window.unlocked.connect(self._on_vault_unlocked)
+        self._vault_window.quit_requested.connect(self.shutdown)
+        self._vault_window.show()
+
+    def _on_vault_unlocked(self) -> None:
+        """Handle the VaultWindow unlocked signal.
+
+        Creates the main toolbar and floating windows once the vault is
+        unlocked and configured, then hides the vault gate.
+        """
+        if not (self._vault.is_configured() and self._vault.is_unlocked()):
+            # Not actually ready (e.g. reset just switched to setup mode).
+            return
+
+        # Tear down the vault gate.
+        if self._vault_window is not None:
+            self._vault_window.hide()
+            self._vault_window.deleteLater()
+            self._vault_window = None
+
+        self._create_all_windows()
+        if self._main_window is not None:
+            self._main_window.show()
+        self.unlocked.emit()
+
+    def _create_floating_windows(self) -> None:
+        """Create all secondary floating windows (extracted for reuse)."""
+        self._book_window = BookWindow(master_data_service=self._master_data_service)
+        self._tickets_window = TicketsWindow()
+        self._train_results_window = TrainResultsWindow()
+        self._accounts_window = AccountsWindow()
+        self._payment_window = PaymentWindow()
+        self._settings_window = SettingsWindow()
+        self._proxies_window = ProxiesWindow()
+        self._history_window = HistoryWindow()
+        self._backup_restore_window = BackupRestoreWindow()
+        self._tokens_window = TokensWindow()
+
+    def _create_all_windows(self) -> None:
+        """Create the main toolbar and all secondary floating windows."""
+        self._main_window = MainToolbarWindow()
+        place_toolbar_top(self._main_window)
+
+        self._create_floating_windows()
+        self._connect_signals()
+
+        # Position tickets window below toolbar
+        self._position_window_centered(self._tickets_window, top_offset=90)
+        self._refresh_tickets_window()
 
     def _connect_signals(self) -> None:
         """Connect UI signals between windows and services."""
@@ -735,6 +799,28 @@ class Application(QObject):
         except Exception as ex:
             QMessageBox.warning(self._backup_restore_window, "Restore Error", str(ex))
 
+    def _ensure_vault_window(self) -> None:
+        """Create and wire the VaultWindow gate if it does not exist."""
+        if self._vault_window is not None:
+            return
+        self._vault_window = VaultWindow()
+        self._vault_window.set_vault(self._vault)
+        self._vault_window.unlocked.connect(self._on_vault_unlocked)
+        self._vault_window.quit_requested.connect(self.shutdown)
+        if self._vault is not None:
+            mode = "setup" if not self._vault.is_configured() else "unlock"
+            self._vault_window.set_mode(mode)
+
+    def _on_vault_unlocked(self) -> None:
+        """Reveal the dock toolbar once the vault is unlocked."""
+        if self._vault_window is not None:
+            self._vault_window.hide()
+        if self._main_window is None:
+            self.create_main_window()
+        if self._main_window is not None:
+            self._main_window.show()
+            self._main_window.raise_()
+
     # ------------------------------------------------------------------
     # Application Lifecycle
     # ------------------------------------------------------------------
@@ -745,7 +831,11 @@ class Application(QObject):
         Returns the application exit code.
         """
         self.ready.emit()
-        if self._main_window is not None:
+        if self._vault is not None and not self._vault.is_unlocked():
+            self._ensure_vault_window()
+            self._vault_window.show()
+            self._vault_window.raise_()
+        elif self._main_window is not None:
             self._main_window.show()
 
         app = QApplication.instance()
@@ -770,6 +860,7 @@ class Application(QObject):
             self._proxies_window,
             self._history_window,
             self._backup_restore_window,
+            self._vault_window,
         ]:
             if w is not None:
                 try:

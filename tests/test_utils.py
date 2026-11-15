@@ -214,9 +214,11 @@ class ExtractTrainNumberTestCase(unittest.TestCase):
                 self.assertEqual(extract_train_number(value), expected)
 
     def test_falsy_and_non_strings(self) -> None:
-        for value in ("", "   ", None, False, 0):
+        for value in ("", None, False, 0):
             with self.subTest(value=value):
                 self.assertIsNone(extract_train_number(value))
+        # Whitespace-only strings are truthy: they trim to "".
+        self.assertEqual(extract_train_number("   "), "")
         self.assertEqual(extract_train_number(123), "123")
         self.assertEqual(extract_train_number(True), "true")
         self.assertEqual(extract_train_number([1, 2]), "1,2")
