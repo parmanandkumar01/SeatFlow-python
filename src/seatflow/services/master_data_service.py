@@ -23,7 +23,8 @@ class MasterDataService:
             data_dir: Path to directory containing stations.json and trains.json.
         """
         if data_dir is None:
-            data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+            from seatflow.utils.resources import get_data_dir
+            data_dir = str(get_data_dir())
         self._data_dir = data_dir
 
         self._stations: list[dict[str, Any]] = []

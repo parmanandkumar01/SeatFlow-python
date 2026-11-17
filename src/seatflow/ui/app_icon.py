@@ -13,6 +13,11 @@ _CACHED_PIXMAP: QPixmap | None = None
 
 def get_logo_path() -> str:
     """Return absolute path to SeatFlow logo PNG."""
+    from seatflow.utils.resources import get_asset_path
+    resolved = get_asset_path("logo.png")
+    if resolved.is_file():
+        return str(resolved)
+
     candidates = [
         Path(__file__).resolve().parent.parent.parent.parent / "assets" / "logo.png",
         Path.cwd() / "assets" / "logo.png",

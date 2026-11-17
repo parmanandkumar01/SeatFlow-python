@@ -11,9 +11,22 @@ dependencies = [
     "PySide6>=6.0.0",
 ]
 
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.0.0",
+]
+test = [
+    "pytest>=8.0.0",
+]
+
 [project.scripts]
-seatflow = "src.seatflow.main:main"
+seatflow = "seatflow.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["seatflow*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "-ra -q"

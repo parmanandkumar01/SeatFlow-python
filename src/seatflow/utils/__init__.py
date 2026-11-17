@@ -20,6 +20,12 @@ from .mappings import (
     quota_label,
     train_class_label,
 )
+from .resources import (
+    get_asset_path,
+    get_bundle_dir,
+    get_data_dir,
+    get_resource_path,
+)
 from .text import extract_train_number, gateway_slug, js_number, js_string, js_truthy
 from .watermark import (
     DEFAULT_FONT_SIZE,
@@ -41,6 +47,10 @@ __all__ = [
     "display_to_iso",
     "extract_train_number",
     "gateway_slug",
+    "get_asset_path",
+    "get_bundle_dir",
+    "get_data_dir",
+    "get_resource_path",
     "iso_to_display",
     "js_number",
     "js_string",

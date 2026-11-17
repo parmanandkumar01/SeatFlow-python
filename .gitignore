@@ -50,7 +50,16 @@ coverage.xml
 .DS_Store
 Thumbs.db
 
-# Application data
+# Application data & caches
 *.db
 *.sqlite
 *.sqlite3
+:memory:
+.freebuff/
+*.log
+logs/
+
+# Machine Learning / AI Model Artifacts
+*.onnx
+models/
+
