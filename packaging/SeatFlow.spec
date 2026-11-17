@@ -13,7 +13,11 @@ from PyInstaller.utils.hooks import collect_submodules
 
 block_cipher = None
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# In PyInstaller spec execution context, __file__ is undefined; SPECPATH points to the spec folder.
+if "SPECPATH" in globals():
+    PROJECT_ROOT = Path(SPECPATH).resolve().parent
+else:
+    PROJECT_ROOT = Path(os.path.abspath(".")).resolve()
 SRC_DIR = PROJECT_ROOT / "src"
 
 if str(SRC_DIR) not in sys.path:
