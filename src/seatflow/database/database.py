@@ -41,7 +41,7 @@ def get_db_path(db_path: Optional[str] = None) -> str:
     if db_path:
         return os.path.abspath(db_path)
 
-    env_path = os.environ.get("BINGO_DB_PATH")
+    env_path = os.environ.get("SEATFLOW_DB_PATH") or os.environ.get("BINGO_DB_PATH")
     if env_path:
         return os.path.abspath(env_path)
 
